@@ -1,0 +1,11 @@
+# Third-party dependencies shared by the CLI and Tkinter GUI.
+pandas
+numpy
+matplotlib  # Includes the TkAgg canvas used for embedded GUI charts.
+yfinance
+pandas_market_calendars
+
+# GUI requirement: Python with Tcl/Tk support and a local desktop display.
+# tkinter, ttk, messagebox, threading and queue are standard-library modules.
+# Do not install tkinter or tk with pip. Check support with: python -m tkinter
+# AI tools and their use for this file and the GUI are acknowledged in README.txt, section 14.
