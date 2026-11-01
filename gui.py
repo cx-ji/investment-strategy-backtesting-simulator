@@ -8,6 +8,7 @@ from threading import Thread
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 # The __main__ guard in main.py prevents imports from starting the CLI.
@@ -27,9 +28,14 @@ METRICS = (
 )
 
 
-def build_config(asset_inputs, start_text, end_text):
+def build_config(
+    asset_inputs: list[tuple[str, str, str | int | float]],
+    start_text: str,
+    end_text: str,
+) -> dict:
     """Validate (ticker, strategy_code, amount_text) rows and build a config.
 
+    Amounts are strings from form entries or numbers from saved history.
     This function does not access widgets and raises ValueError for invalid input.
     """
     if not 1 <= len(asset_inputs) <= 3:
@@ -69,7 +75,7 @@ def build_config(asset_inputs, start_text, end_text):
             "end_date": dates[1].strftime("%Y-%m-%d")}
 
 
-def configuration_text(config):
+def configuration_text(config: dict) -> str:
     """Build a shared configuration summary for confirmation, results and history."""
     lines = [f"Period: {config['start_date']} to {config['end_date']}"]
     for asset in config["assets"]:
@@ -80,12 +86,12 @@ def configuration_text(config):
     return "\n".join(lines)
 
 
-def format_metric(value, kind):
+def format_metric(value: float, kind: str) -> str:
     """Format currency or decimal returns, such as 0.12 as 12.00%."""
     return f"{value:,.2%}" if kind == "percent" else f"USD {value:,.2f}"
 
 
-def read_history(path=HISTORY_PATH):
+def read_history(path: Path = HISTORY_PATH) -> list[dict]:
     """Read and validate history without deleting records or overwriting bad data."""
     if not path.exists():
         return []
@@ -122,7 +128,7 @@ def read_history(path=HISTORY_PATH):
 class BacktestApp:
     """Manage four pages in one window, storing widgets and runtime state."""
 
-    def __init__(self, root):
+    def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.busy = False
         self.messages = Queue()
@@ -145,13 +151,13 @@ class BacktestApp:
         self.create_history_page()
         self.show_page("menu")
 
-    def show_page(self, name):
+    def show_page(self, name: str) -> None:
         """Hide pages without destroying them so configuration inputs are preserved."""
         for page in self.pages.values():
             page.pack_forget()
         self.pages[name].pack(fill="both", expand=True)
 
-    def create_menu(self):
+    def create_menu(self) -> None:
         content = ttk.Frame(self.pages["menu"])
         content.pack(expand=True)
         ttk.Label(content, text="Investment Strategy Backtesting Simulator",
@@ -163,7 +169,7 @@ class BacktestApp:
                    command=self.open_history).pack(pady=8)
         ttk.Button(content, text="Exit", width=28, command=self.close).pack(pady=8)
 
-    def create_config_page(self):
+    def create_config_page(self) -> None:
         # Allow scrolling when three asset rows exceed the available window height.
         container = self.pages["config"]
         self.config_canvas = tk.Canvas(container, highlightthickness=0)
@@ -244,28 +250,28 @@ class BacktestApp:
         self.config_back.pack(side="left")
         self.update_asset_rows()
 
-    def scroll_config(self, event):
+    def scroll_config(self, event: tk.Event) -> None:
         """Handle Windows mouse-wheel scrolling only when the form overflows."""
         if self.pages["config"].winfo_ismapped():
             top, bottom = self.config_canvas.yview()
             if bottom - top < 1:
                 self.config_canvas.yview_scroll(-int(event.delta / 120), "units")
 
-    def update_asset_rows(self, event=None):
+    def update_asset_rows(self, event: tk.Event | None = None) -> None:
         count = int(self.asset_count.get())
         for index, row in enumerate(self.asset_rows):
             row["frame"].pack_forget()
             if index < count:
                 row["frame"].pack(fill="x", pady=5, before=self.config_footer)
 
-    def update_asset_labels(self, index):
+    def update_asset_labels(self, index: int) -> None:
         row = self.asset_rows[index]
         row["description"].set(ETFS[row["ticker"].get()])
         row["amount_label"].set("Initial Capital (USD)"
                                 if row["strategy"].get() == "Buy and Hold"
                                 else "Monthly Investment (USD)")
 
-    def start_backtest(self):
+    def start_backtest(self) -> None:
         """Validate inputs on the main thread, then run the backtest in a worker."""
         if self.busy:
             return
@@ -289,7 +295,7 @@ class BacktestApp:
         Thread(target=self.backtest_worker, args=(config,), daemon=True).start()
         self.root.after(100, self.poll_backtest)
 
-    def backtest_worker(self, config):
+    def backtest_worker(self, config: dict) -> None:
         """Queue results for the main thread and retain results if saving fails."""
         try:
             portfolio, performance = run_backtest(config)
@@ -307,7 +313,7 @@ class BacktestApp:
             save_warning = str(error)
         self.messages.put(("success", (config, portfolio, performance, save_warning)))
 
-    def poll_backtest(self):
+    def poll_backtest(self) -> None:
         """Poll with after so the window remains responsive while the worker runs."""
         try:
             outcome, payload = self.messages.get_nowait()
@@ -326,7 +332,7 @@ class BacktestApp:
         self.status.set("Backtest completed.")
         self.display_results(config, portfolio, performance, save_warning)
 
-    def create_results_page(self):
+    def create_results_page(self) -> None:
         page = self.pages["results"]
         ttk.Label(page, text="Backtest Results", style="Heading.TLabel").pack(anchor="w")
         self.result_config = tk.StringVar()
@@ -353,7 +359,13 @@ class BacktestApp:
         self.chart_frame = ttk.Frame(page)
         self.chart_frame.pack(fill="both", expand=True)
 
-    def display_results(self, config, portfolio, performance, save_warning):
+    def display_results(
+        self,
+        config: dict,
+        portfolio: pd.DataFrame,
+        performance: dict,
+        save_warning: str | None,
+    ) -> None:
         self.result_config.set(configuration_text(config))
         for key, _, kind in METRICS:
             value = performance[key]
@@ -396,7 +408,7 @@ class BacktestApp:
         if save_warning:
             messagebox.showwarning("History Not Saved", save_warning, parent=self.root)
 
-    def create_history_page(self):
+    def create_history_page(self) -> None:
         page = self.pages["history"]
         ttk.Label(page, text="Backtest History", style="Heading.TLabel").pack(anchor="w")
         actions = ttk.Frame(page)
@@ -432,14 +444,14 @@ class BacktestApp:
         details_scroll.pack(side="right", fill="y")
         self.history_details.pack(side="left", fill="both", expand=True)
 
-    def set_history_details(self, text):
+    def set_history_details(self, text: str) -> None:
         # Temporarily enable programmatic updates, keeping history read-only for users.
         self.history_details.configure(state="normal")
         self.history_details.delete("1.0", "end")
         self.history_details.insert("1.0", text)
         self.history_details.configure(state="disabled")
 
-    def open_history(self):
+    def open_history(self) -> None:
         self.show_page("history")
         for item in self.history_table.get_children():
             self.history_table.delete(item)
@@ -465,7 +477,7 @@ class BacktestApp:
         self.history_table.selection_set("0")
         self.show_history_details()
 
-    def show_history_details(self, event=None):
+    def show_history_details(self, event: tk.Event | None = None) -> None:
         selection = self.history_table.selection()
         if not selection:
             return
@@ -475,7 +487,7 @@ class BacktestApp:
             lines.append(f"{title}: {format_metric(record['performance'][key], kind)}")
         self.set_history_details("\n".join(lines))
 
-    def close(self):
+    def close(self) -> None:
         # Do not exit during a backtest or save, which could interrupt history writes.
         if self.busy:
             messagebox.showinfo("Backtest Running",
@@ -484,7 +496,7 @@ class BacktestApp:
         self.root.destroy()
 
 
-def main():
+def main() -> None:
     root = tk.Tk()
     BacktestApp(root)
     root.mainloop()
